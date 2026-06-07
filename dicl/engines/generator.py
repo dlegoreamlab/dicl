@@ -1,7 +1,8 @@
 """
 FileRecord Generator (백서 §12)
 ───────────────────────────────
-모든 발견 결과(사이트, 미디어)를 DFSS 기반 FileRecord 로 변환한다.
+모든 발견 결과(사이트, 미디어, trash URL)를 DFSS 기반 FileRecord 로 변환한다.
+DFSS 코드나 의존성은 수정하지 않는다.
 """
 
 from __future__ import annotations
@@ -65,12 +66,12 @@ class FileRecordGenerator:
                     "updated_at": now,
                 },
                 "structure": {
-                    "pages": [],
+                    "pages": sorted(observed_sitemap.keys()),
                     "links": [d["url"] for d in discoveries],
                     "resources": discoveries,
                     "api_endpoints": [],
                     "media_streams": [],
-                    "sitemaps": [observed_sitemap.get(site_url, {})],
+                    "sitemaps": [observed_sitemap],
                     "robots_txt": None,
                 },
                 "authentication": {
@@ -102,7 +103,7 @@ class FileRecordGenerator:
                 "analysis": {
                     "technology_stack": [analysis.get("framework")] if analysis.get("framework") else [],
                     "content_category": None,
-                    "crawl_depth": 0,
+                    "crawl_depth": max((d.get("depth", 0) for d in discoveries), default=0),
                     "api_count": 0,
                     "media_count": media_count,
                     "document_count": pdf_count,
@@ -155,7 +156,6 @@ class FileRecordGenerator:
                 path=url,
                 meta={
                     "fields": {"format": suffix},
-                    "relation": {"source_url": parent_url},
                 },
             )
 
@@ -170,8 +170,40 @@ class FileRecordGenerator:
                         "page_count": None,
                         "language": None,
                     },
-                    "relation": {"source_url": parent_url},
                 },
             )
 
         raise ValueError(f"Unsupported media_type: {media_type}")
+
+    # ── Trash URL Record ──────────────────────────────────
+    def make_url_record(self, parent_url: str, url: str) -> FileRecord:
+        parsed = urlparse(url)
+        return FileRecord.create(
+            type="url",
+            path=url,
+            meta={
+                "fields": {
+                    "title": self._filename_from_url(url),
+                    "domain": parsed.netloc,
+                    "published_at": "",
+                    "language": "",
+                },
+                "content": {
+                    "full_text": f"Recursive non-media URL discovered from {parent_url}",
+                    "html": "",
+                },
+                "semantic": {
+                    "topics": [],
+                    "keywords": [],
+                },
+                "relation": {
+                    "canonical_url": url,
+                    "redirect_chain": [],
+                    "parent_global_id": parent_url,
+                },
+                "scoring": {
+                    "quality": 0.0,
+                    "crawl_confidence": 1.0,
+                },
+            },
+        )

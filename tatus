@@ -1,0 +1,775 @@
+[1mdiff --git a/README.md b/README.md[m
+[1mindex 5ab2eaa..7f2b51c 100644[m
+[1m--- a/README.md[m
+[1m+++ b/README.md[m
+[36m@@ -1,12 +1,12 @@[m
+ # DICL — Dlegoream Intelligence Crawling Library[m
+ [m
+[31m-> Web Intelligence Discovery Framework · v2.0  [m
+[32m+[m[32m> Web Intelligence Discovery Framework · v2.1[m[41m  [m
+ > _by **DLEGOREAM LABORATORY**_[m
+ [m
+ DICL 은 단순 크롤러가 아니다. 웹사이트를 **정보 시스템**으로 간주하고[m
+[31m-**동영상 / 이미지 / 오디오 / PDF** 네 가지 미디어 링크만을 발견하여[m
+[31m-DFSS 기반 표준 `FileRecord` 로 변환하는 **노드 기반(Node-driven)** 지능형[m
+[31m-Discovery Framework 이다.[m
+[32m+[m[32m재귀적으로 구조를 순회하면서 **동영상 / 이미지 / 오디오 / PDF** 미디어 링크를 발견하며,[m
+[32m+[m[32m그 외 비미디어 URL 은 **trash list** 로 분리하여 DFSS 표준 `FileRecord` 로 반환하는[m
+[32m+[m[32m**노드 기반(Node-driven)** 지능형 Discovery Framework 이다.[m
+ [m
+ ---[m
+ [m
+[36m@@ -21,24 +21,25 @@[m [mURL ──► │ Scout Node │──► │ Control    │──► │ Heavy[m
+        ┌────────────┬───────────────┬──────────────┘[m
+        ▼            ▼               ▼[m
+   Discovery     Analysis      Relationship[m
+[31m-  (4종 필터)    (기술스택)    (Observed Sitemap)[m
+[32m+[m[32m (4종 필터 +    (기술스택)    (Observed Sitemap)[m
+[32m+[m[32m  trash 분리)[m
+        └────────────┴───────────────┘[m
+                     ▼[m
+             DFSS FileRecord Generator[m
+                     ▼[m
+[31m-              FileRecord(s)[m
+[32m+[m[32m      site / media / trash FileRecord(s)[m
+ ```[m
+ [m
+ | 구성요소 | 백서 절 | 역할 |[m
+ |---|---|---|[m
+[31m-| `ScoutNode` | §8 | HTML 정적 수집 · 미디어 후보 추출 |[m
+[32m+[m[32m| `ScoutNode` | §8 | HTML 정적 수집 · 링크/미디어 후보 추출 |[m
+ | `ControlNode` | §9 | 중요도 계산 · Heavy 호출 결정 |[m
+ | `HeavyAnalyzerNode` | §8 | Playwright 로 동적 콘텐츠 분석 |[m
+[31m-| `DiscoveryEngine` | §5 | **video / image / audio / pdf 만 통과** |[m
+[32m+[m[32m| `DiscoveryEngine` | §5 | **video / image / audio / pdf 필터 + trash URL 분리** |[m
+ | `AnalysisEngine` | §6 | framework / auth / server 추정 |[m
+ | `RelationshipEngine` | §7, §11 | 관계 그래프 · Observed Sitemap |[m
+ | `FileRecordGenerator` | §12 | DFSS `FileRecord` 변환 |[m
+[31m-| `VisitBudget` | §10 | 무한 탐색 방지 |[m
+[32m+[m[32m| `VisitBudget` | §10 | 재귀 순회 깊이/방문 수 제어 |[m
+ [m
+ ---[m
+ [m
+[36m@@ -73,20 +74,36 @@[m [mprint(result.site_record)[m
+ for rec in result.media_records:[m
+     print(rec.type, rec.path)[m
+ [m
+[31m-# 3) DFSS 검증[m
+[32m+[m[32m# 3) 재귀 crawl 중 수집된 비미디어 URL — DFSS FileRecord(type="url")[m
+[32m+[m[32mfor rec in result.trash_records:[m
+[32m+[m[32m    print(rec.type, rec.path)[m
+[32m+[m
+[32m+[m[32m# 4) DFSS 검증[m
+ assert result.site_record.validate() is True[m
+ assert all(rec.validate() for rec in result.media_records)[m
+[32m+[m[32massert all(rec.validate() for rec in result.trash_records)[m
+ [m
+[31m-# 4) Observed Sitemap (백서 §11)[m
+[32m+[m[32m# 5) Observed Sitemap (백서 §11)[m
+ print(result.observed_sitemap)[m
+ ```[m
+ [m
+ ---[m
+ [m
+[32m+[m[32m## 동작 원리[m
+[32m+[m
+[32m+[m[32m1. 시작 URL 을 방문한다.[m
+[32m+[m[32m2. 페이지에서 미디어/링크 후보를 수집한다.[m
+[32m+[m[32m3. **video / image / audio / pdf** 는 media discovery 로 확정한다.[m
+[32m+[m[32m4. 나머지 비미디어 URL 은 trash list 에 저장한다.[m
+[32m+[m[32m5. trash list 중 페이지성 URL 만 예산 범위 안에서 재귀 방문한다.[m
+[32m+[m[32m6. 최종적으로 `site_record`, `media_records`, `trash_records` 를 반환한다.[m
+[32m+[m
+[32m+[m[32m---[m
+[32m+[m
+ ## DICL 이 다른 크롤러와 다른 점[m
+ [m
+ 1. **Discovery First** — 다운로드는 하지 않는다. 발견만 한다.[m
+[31m-2. **Structure Aware** — 페이지가 아니라 *웹 구조* 를 본다.[m
+[31m-3. **Unified Record** — 모든 결과가 DFSS `FileRecord` 형식으로 통일된다.[m
+[32m+[m[32m2. **Recursive Structure Aware** — 단일 페이지가 아니라 재귀적 웹 구조를 본다.[m
+[32m+[m[32m3. **Unified Record** — 결과가 DFSS `FileRecord` 형식으로 통일된다.[m
+ 4. **Node 기반 조립** — `Scout/Control/Heavy` 노드를 자유롭게 교체 가능.[m
+[31m-5. **미디어 4종 전용** — 잡음을 만들지 않는다. 영상/이미지/오디오/PDF 만.[m
+[32m+[m[32m5. **Noise Separation** — 미디어와 잡 URL 을 섞지 않고 분리 반환한다.[m
+[1mdiff --git a/dicl/__init__.py b/dicl/__init__.py[m
+[1mindex 041bb46..19d7c5a 100644[m
+[1m--- a/dicl/__init__.py[m
+[1m+++ b/dicl/__init__.py[m
+[36m@@ -1,11 +1,12 @@[m
+ """[m
+ DICL — Dlegoream Intelligence Crawling Library[m
+ ──────────────────────────────────────────────[m
+[31m-Web Intelligence Discovery Framework v2.0[m
+[32m+[m[32mWeb Intelligence Discovery Framework v2.1[m
+ [m
+ 목표[m
+[31m-    URL 을 입력받아 동영상 / 이미지 / 오디오 / PDF 링크만을 발견하고,[m
+[31m-    이를 통일된 FileRecord 로 변환한다.[m
+[32m+[m[32m    URL 을 입력받아 재귀적으로 사이트를 순회하며[m
+[32m+[m[32m    동영상 / 이미지 / 오디오 / PDF 링크를 발견하고,[m
+[32m+[m[32m    재귀 순회 과정에서 만난 비미디어 URL 은 trash record 로 분리 반환한다.[m
+ [m
+ 사용법[m
+     from dicl import DICL[m
+[36m@@ -13,14 +14,17 @@[m [mWeb Intelligence Discovery Framework v2.0[m
+     dicl = DICL()[m
+     result = dicl.crawl("https://example.com")[m
+ [m
+[31m-    print(result.site_record)      # FileRecord(type="site")[m
+[31m-    print(result.media_records)    # list[FileRecord]  (video/image/audio/pdf)[m
+[31m-    print(result.observed_sitemap) # dict[m
+[32m+[m[32m    print(result.site_record)       # FileRecord(type="site")[m
+[32m+[m[32m    print(result.media_records)     # list[FileRecord]  (video/image/audio/pdf)[m
+[32m+[m[32m    print(result.trash_records)     # list[FileRecord]  (url)[m
+[32m+[m[32m    print(result.observed_sitemap)  # dict[m
+ """[m
+ [m
+ from __future__ import annotations[m
+ [m
+[32m+[m[32mfrom collections import deque[m
+ from dataclasses import dataclass, field[m
+[32m+[m[32mfrom urllib.parse import urlparse[m
+ [m
+ from .core.node import Payload[m
+ from .core.pipeline import Pipeline[m
+[36m@@ -38,7 +42,7 @@[m [mfrom .engines.generator import FileRecordGenerator[m
+ from .records.file_record import FileRecord[m
+ [m
+ [m
+[31m-__version__ = "2.0.0"[m
+[32m+[m[32m__version__ = "2.1.0"[m
+ __all__ = ["DICL", "CrawlResult", "FileRecord"][m
+ [m
+ [m
+[36m@@ -46,9 +50,15 @@[m [m__all__ = ["DICL", "CrawlResult", "FileRecord"][m
+ class CrawlResult:[m
+     site_record: FileRecord[m
+     media_records: list[FileRecord] = field(default_factory=list)[m
+[32m+[m[32m    trash_records: list[FileRecord] = field(default_factory=list)[m
+     observed_sitemap: dict = field(default_factory=dict)[m
+     stats: dict = field(default_factory=dict)[m
+ [m
+[32m+[m[32m    @property[m
+[32m+[m[32m    def junk_records(self) -> list[FileRecord]:[m
+[32m+[m[32m        """Backward/semantic alias for callers preferring 'junk' terminology."""[m
+[32m+[m[32m        return self.trash_records[m
+[32m+[m
+ [m
+ class DICL:[m
+     """[m
+[36m@@ -83,45 +93,128 @@[m [mclass DICL:[m
+ [m
+     # ──────────────────────────────────────────────────────[m
+     def crawl(self, url: str) -> CrawlResult:[m
+[32m+[m[32m        root_domain = urlparse(url).netloc[m
+         if not self.budget.can_visit(url, depth=0):[m
+             raise RuntimeError(f"Budget rejects URL: {url}")[m
+[31m-        self.budget.register(url)[m
+[31m-[m
+[31m-        # 1) 노드 파이프라인 실행 (Scout → Control → Heavy)[m
+[31m-        payload = Payload(url=url, depth=0)[m
+[31m-        payload = self.pipeline.run(payload)[m
+[31m-[m
+[31m-        # 2) Discovery: 미디어 4종만 필터링[m
+[31m-        discoveries = self.discovery.discover(payload)[m
+ [m
+[31m-        # 3) Analysis: 사이트 메타데이터 분석[m
+[31m-        analysis = self.analysis.analyze(payload)[m
+[31m-[m
+[31m-        # 4) Relationship: 관계 그래프 갱신[m
+[31m-        self.relationship.link(url, discoveries)[m
+[31m-        relations = self.relationship.relations(url)[m
+[32m+[m[32m        queue = deque([(url, 0)])[m
+[32m+[m[32m        queued: set[str] = {url}[m
+[32m+[m[32m        visited_pages: list[str] = [][m
+[32m+[m
+[32m+[m[32m        media_map: dict[str, dict] = {}[m
+[32m+[m[32m        trash_map: dict[str, dict] = {}[m
+[32m+[m[32m        aggregated_errors: list[dict] = [][m
+[32m+[m[32m        aggregated_warnings: list[str] = [][m
+[32m+[m
+[32m+[m[32m        root_priority = 0.0[m
+[32m+[m[32m        root_analysis: dict | None = None[m
+[32m+[m
+[32m+[m[32m        while queue:[m
+[32m+[m[32m            current_url, depth = queue.popleft()[m
+[32m+[m[32m            if not self.budget.can_visit(current_url, depth=depth):[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            self.budget.register(current_url)[m
+[32m+[m[32m            visited_pages.append(current_url)[m
+[32m+[m
+[32m+[m[32m            payload = Payload(url=current_url, depth=depth)[m
+[32m+[m[32m            payload = self.pipeline.run(payload)[m
+[32m+[m
+[32m+[m[32m            if depth == 0:[m
+[32m+[m[32m                root_priority = payload.priority[m
+[32m+[m
+[32m+[m[32m            aggregated_errors.extend(payload.extras.get("errors", []))[m
+[32m+[m[32m            aggregated_warnings.extend(payload.extras.get("warnings", []))[m
+[32m+[m
+[32m+[m[32m            discoveries = self.discovery.discover(payload)[m
+[32m+[m[32m            trash_urls = self.discovery.discover_trash([m
+[32m+[m[32m                payload,[m
+[32m+[m[32m                scope_domain=root_domain,[m
+[32m+[m[32m            )[m
+[32m+[m[32m            recursive_urls = self.discovery.discover_recursive([m
+[32m+[m[32m                payload,[m
+[32m+[m[32m                scope_domain=root_domain,[m
+[32m+[m[32m            )[m
+[32m+[m[32m            analysis = self.analysis.analyze(payload)[m
+[32m+[m
+[32m+[m[32m            if root_analysis is None:[m
+[32m+[m[32m                root_analysis = analysis[m
+[32m+[m
+[32m+[m[32m            self.relationship.link(current_url, discoveries)[m
+[32m+[m
+[32m+[m[32m            for d in discoveries:[m
+[32m+[m[32m                media_map.setdefault([m
+[32m+[m[32m                    d["url"],[m
+[32m+[m[32m                    {[m
+[32m+[m[32m                        **d,[m
+[32m+[m[32m                        "source_url": current_url,[m
+[32m+[m[32m                        "depth": depth,[m
+[32m+[m[32m                    },[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m            for t in trash_urls:[m
+[32m+[m[32m                if t["url"] == url:[m
+[32m+[m[32m                    continue[m
+[32m+[m[32m                trash_map.setdefault([m
+[32m+[m[32m                    t["url"],[m
+[32m+[m[32m                    {[m
+[32m+[m[32m                        **t,[m
+[32m+[m[32m                        "source_url": current_url,[m
+[32m+[m[32m                        "depth": depth,[m
+[32m+[m[32m                    },[m
+[32m+[m[32m                )[m
+[32m+[m
+[32m+[m[32m            if depth >= self.budget.max_depth:[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            for next_url in recursive_urls:[m
+[32m+[m[32m                if next_url in queued:[m
+[32m+[m[32m                    continue[m
+[32m+[m[32m                if not self.budget.can_visit(next_url, depth=depth + 1):[m
+[32m+[m[32m                    continue[m
+[32m+[m[32m                queue.append((next_url, depth + 1))[m
+[32m+[m[32m                queued.add(next_url)[m
+[32m+[m
+[32m+[m[32m        discoveries = list(media_map.values())[m
+[32m+[m[32m        trash_discoveries = list(trash_map.values())[m
+         observed_sitemap = self.relationship.observed_sitemap()[m
+ [m
+[31m-        # 5) FileRecord 생성[m
+[32m+[m[32m        relations: list[dict] = [][m
+[32m+[m[32m        for page_url in visited_pages:[m
+[32m+[m[32m            relations.extend(self.relationship.relations(page_url))[m
+[32m+[m
+         site_record = self.generator.make_site_record([m
+             site_url=url,[m
+[31m-            analysis=analysis,[m
+[32m+[m[32m            analysis=root_analysis or {},[m
+             discoveries=discoveries,[m
+             relations=relations,[m
+             observed_sitemap=observed_sitemap,[m
+         )[m
+         media_records = [[m
+[31m-            self.generator.make_media_record(url, d) for d in discoveries[m
+[32m+[m[32m            self.generator.make_media_record(d.get("source_url", url), d)[m
+[32m+[m[32m            for d in discoveries[m
+[32m+[m[32m        ][m
+[32m+[m[32m        trash_records = [[m
+[32m+[m[32m            self.generator.make_url_record([m
+[32m+[m[32m                parent_url=t.get("source_url", url),[m
+[32m+[m[32m                url=t["url"],[m
+[32m+[m[32m            )[m
+[32m+[m[32m            for t in trash_discoveries[m
+         ][m
+ [m
+         return CrawlResult([m
+             site_record=site_record,[m
+             media_records=media_records,[m
+[32m+[m[32m            trash_records=trash_records,[m
+             observed_sitemap=observed_sitemap,[m
+             stats={[m
+[31m-                "priority": payload.priority,[m
+[31m-                "errors": payload.extras.get("errors", []),[m
+[31m-                "warnings": payload.extras.get("warnings", []),[m
+[32m+[m[32m                "priority": root_priority,[m
+[32m+[m[32m                "errors": aggregated_errors,[m
+[32m+[m[32m                "warnings": aggregated_warnings,[m
+                 "budget": self.budget.stats(),[m
+[32m+[m[32m                "visited_pages": visited_pages,[m
+[32m+[m[32m                "pages_crawled": len(visited_pages),[m
+[32m+[m[32m                "media_found": len(media_records),[m
+[32m+[m[32m                "trash_found": len(trash_records),[m
+             },[m
+         )[m
+[1mdiff --git a/dicl/engines/discovery.py b/dicl/engines/discovery.py[m
+[1mindex eea7b20..f0542cd 100644[m
+[1m--- a/dicl/engines/discovery.py[m
+[1m+++ b/dicl/engines/discovery.py[m
+[36m@@ -3,15 +3,15 @@[m [mDiscovery Engine (백서 §5)[m
+ ──────────────────────────[m
+ 역할[m
+     Scout + Heavy 가 수집한 모든 후보 URL 중[m
+[31m-    video / image / audio / pdf 4 가지에만 해당하는 항목을 추출한다.[m
+[32m+[m[32m    1) video / image / audio / pdf 4 가지 미디어 URL 을 추출하고[m
+[32m+[m[32m    2) 그 외 재귀 크롤링 후보 / trash URL 을 분리한다.[m
+ [m
+[31m-이 엔진이 DICL 의 정체성을 정의한다:[m
+[31m-    "동영상 이미지 오디오 pdf 링크만 찾는다."[m
+[32m+[m[32mDFSS 자체는 건드리지 않으며, DICL 내부에서만 URL 군을 구분한다.[m
+ """[m
+ [m
+ from __future__ import annotations[m
+ [m
+[31m-from urllib.parse import urlparse[m
+[32m+[m[32mfrom urllib.parse import urlparse, urlunparse[m
+ [m
+ from ..core.node import Payload[m
+ from ..utils.classifier import classify[m
+[36m@@ -21,6 +21,12 @@[m [mclass DiscoveryEngine:[m
+     name = "DiscoveryEngine"[m
+ [m
+     ALLOWED = {"video", "image", "audio", "pdf"}[m
+[32m+[m[32m    NON_RECURSIVE_SUFFIXES = {[m
+[32m+[m[32m        "js", "mjs", "css", "json", "xml", "txt", "map",[m
+[32m+[m[32m        "svg", "ico", "woff", "woff2", "ttf", "eot",[m
+[32m+[m[32m        "zip", "rar", "7z", "gz", "tar", "bz2",[m
+[32m+[m[32m        "exe", "dmg", "apk", "bin",[m
+[32m+[m[32m    }[m
+ [m
+     def discover(self, payload: Payload) -> list[dict]:[m
+         """[m
+[36m@@ -31,12 +37,10 @@[m [mclass DiscoveryEngine:[m
+                 ...[m
+             ][m
+         """[m
+[31m-        pool = list(payload.candidates) + list(payload.dynamic_media)[m
+[31m-[m
+         seen: set[str] = set()[m
+         results: list[dict] = [][m
+ [m
+[31m-        for url in pool:[m
+[32m+[m[32m        for url in self._iter_pool(payload):[m
+             if not url or url in seen:[m
+                 continue[m
+             seen.add(url)[m
+[36m@@ -45,7 +49,6 @@[m [mclass DiscoveryEngine:[m
+             if media_type not in self.ALLOWED:[m
+                 continue[m
+ [m
+[31m-            # 비정상 URL 차단[m
+             parsed = urlparse(url)[m
+             if parsed.scheme not in ("http", "https"):[m
+                 continue[m
+[36m@@ -59,3 +62,83 @@[m [mclass DiscoveryEngine:[m
+             )[m
+ [m
+         return results[m
+[32m+[m
+[32m+[m[32m    def discover_trash([m
+[32m+[m[32m        self,[m
+[32m+[m[32m        payload: Payload,[m
+[32m+[m[32m        scope_domain: str | None = None,[m
+[32m+[m[32m    ) -> list[dict]:[m
+[32m+[m[32m        """[m
+[32m+[m[32m        미디어 4종이 아닌 URL 을 trash 대상으로 분리한다.[m
+[32m+[m[32m        재귀 크롤링에 사용하지 않는 자원(.js/.css 등)도 여기에 포함될 수 있다.[m
+[32m+[m[32m        """[m
+[32m+[m[32m        seen: set[str] = set()[m
+[32m+[m[32m        results: list[dict] = [][m
+[32m+[m
+[32m+[m[32m        for url in self._iter_pool(payload):[m
+[32m+[m[32m            if not url or url in seen:[m
+[32m+[m[32m                continue[m
+[32m+[m[32m            seen.add(url)[m
+[32m+[m
+[32m+[m[32m            parsed = urlparse(url)[m
+[32m+[m[32m            if parsed.scheme not in ("http", "https"):[m
+[32m+[m[32m                continue[m
+[32m+[m[32m            if scope_domain and parsed.netloc != scope_domain:[m
+[32m+[m[32m                continue[m
+[32m+[m[32m            if url == payload.url:[m
+[32m+[m[32m                continue[m
+[32m+[m[32m            if classify(url) in self.ALLOWED:[m
+[32m+[m[32m                continue[m
+[32m+[m
+[32m+[m[32m            results.append([m
+[32m+[m[32m                {[m
+[32m+[m[32m                    "url": url,[m
+[32m+[m[32m                    "domain": parsed.netloc,[m
+[32m+[m[32m                    "source_url": payload.url,[m
+[32m+[m[32m                }[m
+[32m+[m[32m            )[m
+[32m+[m
+[32m+[m[32m        return results[m
+[32m+[m
+[32m+[m[32m    def discover_recursive([m
+[32m+[m[32m        self,[m
+[32m+[m[32m        payload: Payload,[m
+[32m+[m[32m        scope_domain: str | None = None,[m
+[32m+[m[32m    ) -> list[str]:[m
+[32m+[m[32m        """[m
+[32m+[m[32m        trash URL 중 실제로 재귀 크롤링을 시도할 수 있는 URL 만 선별한다.[m
+[32m+[m[32m        """[m
+[32m+[m[32m        out: list[str] = [][m
+[32m+[m[32m        for item in self.discover_trash(payload, scope_domain=scope_domain):[m
+[32m+[m[32m            url = item["url"][m
+[32m+[m[32m            if self._is_recursive_candidate(url):[m
+[32m+[m[32m                out.append(url)[m
+[32m+[m[32m        return out[m
+[32m+[m
+[32m+[m[32m    def _iter_pool(self, payload: Payload) -> list[str]:[m
+[32m+[m[32m        pool = list(payload.candidates) + list(payload.dynamic_media)[m
+[32m+[m
+[32m+[m[32m        cleaned: list[str] = [][m
+[32m+[m[32m        for raw in pool:[m
+[32m+[m[32m            url = self._normalize_url(raw)[m
+[32m+[m[32m            if url:[m
+[32m+[m[32m                cleaned.append(url)[m
+[32m+[m[32m        return cleaned[m
+[32m+[m
+[32m+[m[32m    @staticmethod[m
+[32m+[m[32m    def _normalize_url(url: str | None) -> str | None:[m
+[32m+[m[32m        if not url:[m
+[32m+[m[32m            return None[m
+[32m+[m[32m        parsed = urlparse(url.strip())[m
+[32m+[m[32m        if not parsed.scheme:[m
+[32m+[m[32m            return None[m
+[32m+[m[32m        return urlunparse(parsed._replace(fragment=""))[m
+[32m+[m
+[32m+[m[32m    def _is_recursive_candidate(self, url: str) -> bool:[m
+[32m+[m[32m        parsed = urlparse(url)[m
+[32m+[m[32m        path = parsed.path.rsplit("/", 1)[-1][m
+[32m+[m[32m        if "." not in path:[m
+[32m+[m[32m            return True[m
+[32m+[m
+[32m+[m[32m        suffix = path.rsplit(".", 1)[-1].lower()[m
+[32m+[m[32m        return suffix not in self.NON_RECURSIVE_SUFFIXES[m
+[1mdiff --git a/dicl/engines/generator.py b/dicl/engines/generator.py[m
+[1mindex e820ef6..16f3f93 100644[m
+[1m--- a/dicl/engines/generator.py[m
+[1m+++ b/dicl/engines/generator.py[m
+[36m@@ -1,7 +1,8 @@[m
+ """[m
+ FileRecord Generator (백서 §12)[m
+ ───────────────────────────────[m
+[31m-모든 발견 결과(사이트, 미디어)를 DFSS 기반 FileRecord 로 변환한다.[m
+[32m+[m[32m모든 발견 결과(사이트, 미디어, trash URL)를 DFSS 기반 FileRecord 로 변환한다.[m
+[32m+[m[32mDFSS 코드나 의존성은 수정하지 않는다.[m
+ """[m
+ [m
+ from __future__ import annotations[m
+[36m@@ -65,12 +66,12 @@[m [mclass FileRecordGenerator:[m
+                     "updated_at": now,[m
+                 },[m
+                 "structure": {[m
+[31m-                    "pages": [],[m
+[32m+[m[32m                    "pages": sorted(observed_sitemap.keys()),[m
+                     "links": [d["url"] for d in discoveries],[m
+                     "resources": discoveries,[m
+                     "api_endpoints": [],[m
+                     "media_streams": [],[m
+[31m-                    "sitemaps": [observed_sitemap.get(site_url, {})],[m
+[32m+[m[32m                    "sitemaps": [observed_sitemap],[m
+                     "robots_txt": None,[m
+                 },[m
+                 "authentication": {[m
+[36m@@ -102,7 +103,7 @@[m [mclass FileRecordGenerator:[m
+                 "analysis": {[m
+                     "technology_stack": [analysis.get("framework")] if analysis.get("framework") else [],[m
+                     "content_category": None,[m
+[31m-                    "crawl_depth": 0,[m
+[32m+[m[32m                    "crawl_depth": max((d.get("depth", 0) for d in discoveries), default=0),[m
+                     "api_count": 0,[m
+                     "media_count": media_count,[m
+                     "document_count": pdf_count,[m
+[36m@@ -155,7 +156,6 @@[m [mclass FileRecordGenerator:[m
+                 path=url,[m
+                 meta={[m
+                     "fields": {"format": suffix},[m
+[31m-                    "relation": {"source_url": parent_url},[m
+                 },[m
+             )[m
+ [m
+[36m@@ -170,8 +170,40 @@[m [mclass FileRecordGenerator:[m
+                         "page_count": None,[m
+                         "language": None,[m
+                     },[m
+[31m-                    "relation": {"source_url": parent_url},[m
+                 },[m
+             )[m
+ [m
+         raise ValueError(f"Unsupported media_type: {media_type}")[m
+[32m+[m
+[32m+[m[32m    # ── Trash URL Record ──────────────────────────────────[m
+[32m+[m[32m    def make_url_record(self, parent_url: str, url: str) -> FileRecord:[m
+[32m+[m[32m        parsed = urlparse(url)[m
+[32m+[m[32m        return FileRecord.create([m
+[32m+[m[32m            type="url",[m
+[32m+[m[32m            path=url,[m
+[32m+[m[32m            meta={[m
+[32m+[m[32m                "fields": {[m
+[32m+[m[32m                    "title": self._filename_from_url(url),[m
+[32m+[m[32m                    "domain": parsed.netloc,[m
+[32m+[m[32m                    "published_at": "",[m
+[32m+[m[32m                    "language": "",[m
+[32m+[m[32m                },[m
+[32m+[m[32m                "content": {[m
+[32m+[m[32m                    "full_text": f"Recursive non-media URL discovered from {parent_url}",[m
+[32m+[m[32m                    "html": "",[m
+[32m+[m[32m                },[m
+[32m+[m[32m                "semantic": {[m
+[32m+[m[32m                    "topics": [],[m
+[32m+[m[32m                    "keywords": [],[m
+[32m+[m[32m                },[m
+[32m+[m[32m                "relation": {[m
+[32m+[m[32m                    "canonical_url": url,[m
+[32m+[m[32m                    "redirect_chain": [],[m
+[32m+[m[32m                    "parent_global_id": parent_url,[m
+[32m+[m[32m                },[m
+[32m+[m[32m                "scoring": {[m
+[32m+[m[32m                    "quality": 0.0,[m
+[32m+[m[32m                    "crawl_confidence": 1.0,[m
+[32m+[m[32m                },[m
+[32m+[m[32m            },[m
+[32m+[m[32m        )[m
+[1mdiff --git a/tests/test_dicl.py b/tests/test_dicl.py[m
+[1mindex 791153b..8c3b24b 100644[m
+[1m--- a/tests/test_dicl.py[m
+[1m+++ b/tests/test_dicl.py[m
+[36m@@ -2,15 +2,17 @@[m
+ DICL 검증 스크립트[m
+ ──────────────────[m
+ 1) Offline: HTML 을 직접 주입해 Discovery 가 4종만 골라내는지 확인[m
+[31m-2) Online : 실제 URL 을 크롤해 미디어가 발견되는지 확인 (네트워크 가능 시)[m
+[32m+[m[32m2) Offline: 재귀 crawl 이 비미디어 URL 을 trash_records 로 분리하는지 확인[m
+ 3) DFSS 기반 FileRecord 검증[m
+ """[m
+ [m
+ from __future__ import annotations[m
+ [m
+[32m+[m[32mimport json[m
+ import sys[m
+ [m
+ from dicl import DICL, FileRecord[m
+[32m+[m[32mfrom dicl.core.budget import VisitBudget[m
+ from dicl.core.node import Payload[m
+ from dicl.engines.discovery import DiscoveryEngine[m
+ from dicl.engines.analysis import AnalysisEngine[m
+[36m@@ -35,7 +37,7 @@[m [mSAMPLE_HTML = """[m
+   <video src="/media/movie.mp4"></video>[m
+   <audio><source src="/sound/track.mp3"></audio>[m
+ [m
+[31m-  <!-- 미디어가 아닌 잡음 링크들 — 반드시 걸러져야 한다 -->[m
+[32m+[m[32m  <!-- 미디어가 아닌 잡음 링크들 -->[m
+   <a href="/about.html">About</a>[m
+   <a href="https://example.com/login">Login</a>[m
+   <a href="/docs/whitepaper.pdf">White Paper</a>[m
+[36m@@ -45,11 +47,47 @@[m [mSAMPLE_HTML = """[m
+ </html>[m
+ """[m
+ [m
+[32m+[m[32mRECURSIVE_HTML_ROOT = """[m
+[32m+[m[32m<html lang="ko">[m
+[32m+[m[32m<head><title>Root</title></head>[m
+[32m+[m[32m<body>[m
+[32m+[m[32m  <a href="/about.html">About</a>[m
+[32m+[m[32m  <a href="/assets/app.js">App JS</a>[m
+[32m+[m[32m  <img src="/img/root.jpg">[m
+[32m+[m[32m</body>[m
+[32m+[m[32m</html>[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m[32mRECURSIVE_HTML_ABOUT = """[m
+[32m+[m[32m<html lang="ko">[m
+[32m+[m[32m<head><title>About</title></head>[m
+[32m+[m[32m<body>[m
+[32m+[m[32m  <video src="/media/about.mp4"></video>[m
+[32m+[m[32m  <a href="/contact">Contact</a>[m
+[32m+[m[32m</body>[m
+[32m+[m[32m</html>[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m[32mRECURSIVE_HTML_CONTACT = """[m
+[32m+[m[32m<html lang="ko">[m
+[32m+[m[32m<head><title>Contact</title></head>[m
+[32m+[m[32m<body>[m
+[32m+[m[32m  <a href="/docs/company.pdf">Company PDF</a>[m
+[32m+[m[32m</body>[m
+[32m+[m[32m</html>[m
+[32m+[m[32m"""[m
+[32m+[m
+[32m+[m
+[32m+[m[32mclass FakeResponse:[m
+[32m+[m[32m    def __init__(self, text: str, status_code: int = 200, headers: dict | None = None):[m
+[32m+[m[32m        self.text = text[m
+[32m+[m[32m        self.status_code = status_code[m
+[32m+[m[32m        self.headers = headers or {"Content-Type": "text/html", "Server": "test"}[m
+[32m+[m
+ [m
+ def test_offline() -> None:[m
+[31m-    print("── [Offline] Discovery 4종 필터 검증 ──")[m
+[32m+[m[32m    print("── [Offline] Discovery + trash 분리 검증 ──")[m
+ [m
+[31m-    # ScoutNode 내부 로직만 사용 (네트워크 호출 없음)[m
+     from bs4 import BeautifulSoup[m
+     soup = BeautifulSoup(SAMPLE_HTML, "html.parser")[m
+ [m
+[36m@@ -64,7 +102,10 @@[m [mdef test_offline() -> None:[m
+         headers={"Server": "nginx"},[m
+     )[m
+ [m
+[31m-    discoveries = DiscoveryEngine().discover(payload)[m
+[32m+[m[32m    discovery = DiscoveryEngine()[m
+[32m+[m[32m    discoveries = discovery.discover(payload)[m
+[32m+[m[32m    trash = discovery.discover_trash(payload, scope_domain="example.com")[m
+[32m+[m[32m    recursive_urls = discovery.discover_recursive(payload, scope_domain="example.com")[m
+     analysis = AnalysisEngine().analyze(payload)[m
+ [m
+     rel = RelationshipEngine()[m
+[36m@@ -79,23 +120,25 @@[m [mdef test_offline() -> None:[m
+         observed_sitemap=rel.observed_sitemap(),[m
+     )[m
+     media_records = [gen.make_media_record(payload.url, d) for d in discoveries][m
+[32m+[m[32m    trash_records = [gen.make_url_record(payload.url, t["url"]) for t in trash][m
+ [m
+     print(f" candidates(raw) : {len(candidates)}")[m
+     print(f" discoveries(4종): {len(discoveries)}")[m
+[32m+[m[32m    print(f" trash_urls      : {len(trash)}")[m
+     for d in discoveries:[m
+[31m-        print(f"   - [{d['media_type']:5s}] {d['url']}")[m
+[32m+[m[32m        print(f"   - [MEDIA:{d['media_type']:5s}] {d['url']}")[m
+[32m+[m[32m    for t in trash:[m
+[32m+[m[32m        print(f"   - [TRASH] {t['url']}")[m
+     print()[m
+     print(f" analysis        : framework={analysis['framework']!r}, "[m
+           f"auth_type={analysis['auth_type']!r}, title={analysis['title']!r}")[m
+     print()[m
+     print(" Observed Sitemap:")[m
+[31m-    import json[m
+     print(json.dumps(rel.observed_sitemap(), indent=2, ensure_ascii=False))[m
+     print()[m
+[31m-    print(f" site_record  : {site}")[m
+[31m-    print(f" media_records: {len(media_records)}개")[m
+[31m-    for r in media_records:[m
+[31m-        print(f"   {r}")[m
+[32m+[m[32m    print(f" site_record   : {site}")[m
+[32m+[m[32m    print(f" media_records : {len(media_records)}개")[m
+[32m+[m[32m    print(f" trash_records : {len(trash_records)}개")[m
+ [m
+     types = sorted({d["media_type"] for d in discoveries})[m
+     assert types == ["audio", "image", "pdf", "video"], types[m
+[36m@@ -106,39 +149,91 @@[m [mdef test_offline() -> None:[m
+     assert not any(d["url"].startswith("mailto:") for d in discoveries)[m
+     assert analysis["framework"] == "next.js"[m
+ [m
+[32m+[m[32m    trash_urls = {t["url"] for t in trash}[m
+[32m+[m[32m    assert "https://example.com/about.html" in trash_urls[m
+[32m+[m[32m    assert "https://example.com/login" in trash_urls[m
+[32m+[m[32m    assert "https://example.com/script.js" in trash_urls[m
+[32m+[m[32m    assert "https://example.com/docs/whitepaper.pdf" not in trash_urls[m
+[32m+[m[32m    assert "https://example.com/script.js" not in recursive_urls[m
+[32m+[m[32m    assert "https://example.com/about.html" in recursive_urls[m
+[32m+[m
+     assert isinstance(site, FileRecord)[m
+     assert site.type == "site"[m
+     assert site.validate() is True[m
+     assert all(isinstance(r, FileRecord) for r in media_records)[m
+     assert all(r.validate() is True for r in media_records)[m
+[32m+[m[32m    assert all(isinstance(r, FileRecord) for r in trash_records)[m
+[32m+[m[32m    assert all(r.type == "url" for r in trash_records)[m
+[32m+[m[32m    assert all(r.validate() is True for r in trash_records)[m
+ [m
+     print("\n ✅ Offline 검증 통과\n")[m
+ [m
+ [m
+ # ──────────────────────────────────────────────────────────[m
+[31m-# 2) Online 통합 검증 (네트워크 가능 시)[m
+[32m+[m[32m# 2) Offline 재귀 crawl 검증[m
+ # ──────────────────────────────────────────────────────────[m
+[31m-def test_online(url: str) -> None:[m
+[31m-    print(f"── [Online] crawl {url} ──")[m
+[32m+[m[32mdef test_recursive_crawl() -> None:[m
+[32m+[m[32m    print("── [Offline] Recursive crawl 검증 ──")[m
+[32m+[m
+[32m+[m[32m    import requests[m
+[32m+[m
+[32m+[m[32m    html_map = {[m
+[32m+[m[32m        "https://example.com": RECURSIVE_HTML_ROOT,[m
+[32m+[m[32m        "https://example.com/about.html": RECURSIVE_HTML_ABOUT,[m
+[32m+[m[32m        "https://example.com/contact": RECURSIVE_HTML_CONTACT,[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    original_get = requests.get[m
+[32m+[m
+[32m+[m[32m    def fake_get(url, *args, **kwargs):  # noqa: ANN001, D401[m
+[32m+[m[32m        if url not in html_map:[m
+[32m+[m[32m            raise RuntimeError(f"Unexpected URL: {url}")[m
+[32m+[m[32m        return FakeResponse(html_map[url])[m
+[32m+[m
+[32m+[m[32m    requests.get = fake_get[m
+     try:[m
+[31m-        dicl = DICL(use_heavy=False)[m
+[31m-        result = dicl.crawl(url)[m
+[31m-    except Exception as e:  # noqa: BLE001[m
+[31m-        print(f"  (네트워크 실패: {e})")[m
+[31m-        return[m
+[31m-[m
+[31m-    print(f" site_record  : {result.site_record}")[m
+[31m-    print(f" media_records: {len(result.media_records)}개")[m
+[31m-    for r in result.media_records[:10]:[m
+[31m-        print(f"   {r}")[m
+[31m-    print(f" stats        : {result.stats}")[m
+[31m-    print()[m
+[32m+[m[32m        dicl = DICL([m
+[32m+[m[32m            budget=VisitBudget(max_depth=2, max_visits=10, max_per_domain=10, max_seconds=10.0),[m
+[32m+[m[32m            use_heavy=False,[m
+[32m+[m[32m        )[m
+[32m+[m[32m        result = dicl.crawl("https://example.com")[m
+[32m+[m[32m    finally:[m
+[32m+[m[32m        requests.get = original_get[m
+[32m+[m
+[32m+[m[32m    print(f" pages_crawled  : {result.stats['pages_crawled']}")[m
+[32m+[m[32m    print(f" media_records  : {len(result.media_records)}개")[m
+[32m+[m[32m    print(f" trash_records  : {len(result.trash_records)}개")[m
+[32m+[m[32m    print(f" visited_pages  : {result.stats['visited_pages']}")[m
+[32m+[m
+[32m+[m[32m    media_paths = {r.path for r in result.media_records}[m
+[32m+[m[32m    trash_paths = {r.path for r in result.trash_records}[m
+ [m
+     assert result.site_record.validate() is True[m
+     assert all(r.validate() is True for r in result.media_records)[m
+[32m+[m[32m    assert all(r.validate() is True for r in result.trash_records)[m
+[32m+[m
+[32m+[m[32m    assert "https://example.com/img/root.jpg" in media_paths[m
+[32m+[m[32m    assert "https://example.com/media/about.mp4" in media_paths[m
+[32m+[m[32m    assert "https://example.com/docs/company.pdf" in media_paths[m
+[32m+[m
+[32m+[m[32m    assert "https://example.com/about.html" in trash_paths[m
+[32m+[m[32m    assert "https://example.com/assets/app.js" in trash_paths[m
+[32m+[m[32m    assert "https://example.com/contact" in trash_paths[m
+[32m+[m
+[32m+[m[32m    assert result.stats["pages_crawled"] == 3[m
+[32m+[m[32m    assert result.stats["trash_found"] == 3[m
+[32m+[m[32m    assert set(result.stats["visited_pages"]) == {[m
+[32m+[m[32m        "https://example.com",[m
+[32m+[m[32m        "https://example.com/about.html",[m
+[32m+[m[32m        "https://example.com/contact",[m
+[32m+[m[32m    }[m
+[32m+[m
+[32m+[m[32m    print("\n ✅ Recursive crawl 검증 통과\n")[m
+ [m
+ [m
+ if __name__ == "__main__":[m
+     test_offline()[m
+[31m-    target = sys.argv[1] if len(sys.argv) > 1 else "https://www.python.org"[m
+[31m-    test_online(target)[m
+[32m+[m[32m    test_recursive_crawl()[m
+[32m+[m[32m    if len(sys.argv) > 1:[m
+[32m+[m[32m        target = sys.argv[1][m
+[32m+[m[32m        print(f"(optionnel) online crawl: {target}")[m

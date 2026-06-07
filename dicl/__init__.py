@@ -1,11 +1,12 @@
 """
 DICL — Dlegoream Intelligence Crawling Library
 ──────────────────────────────────────────────
-Web Intelligence Discovery Framework v2.0
+Web Intelligence Discovery Framework v2.1
 
 목표
-    URL 을 입력받아 동영상 / 이미지 / 오디오 / PDF 링크만을 발견하고,
-    이를 통일된 FileRecord 로 변환한다.
+    URL 을 입력받아 재귀적으로 사이트를 순회하며
+    동영상 / 이미지 / 오디오 / PDF 링크를 발견하고,
+    재귀 순회 과정에서 만난 비미디어 URL 은 trash record 로 분리 반환한다.
 
 사용법
     from dicl import DICL
@@ -13,14 +14,17 @@ Web Intelligence Discovery Framework v2.0
     dicl = DICL()
     result = dicl.crawl("https://example.com")
 
-    print(result.site_record)      # FileRecord(type="site")
-    print(result.media_records)    # list[FileRecord]  (video/image/audio/pdf)
-    print(result.observed_sitemap) # dict
+    print(result.site_record)       # FileRecord(type="site")
+    print(result.media_records)     # list[FileRecord]  (video/image/audio/pdf)
+    print(result.trash_records)     # list[FileRecord]  (url)
+    print(result.observed_sitemap)  # dict
 """
 
 from __future__ import annotations
 
+from collections import deque
 from dataclasses import dataclass, field
+from urllib.parse import urlparse
 
 from .core.node import Payload
 from .core.pipeline import Pipeline
@@ -38,7 +42,7 @@ from .engines.generator import FileRecordGenerator
 from .records.file_record import FileRecord
 
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __all__ = ["DICL", "CrawlResult", "FileRecord"]
 
 
@@ -46,8 +50,14 @@ __all__ = ["DICL", "CrawlResult", "FileRecord"]
 class CrawlResult:
     site_record: FileRecord
     media_records: list[FileRecord] = field(default_factory=list)
+    trash_records: list[FileRecord] = field(default_factory=list)
     observed_sitemap: dict = field(default_factory=dict)
     stats: dict = field(default_factory=dict)
+
+    @property
+    def junk_records(self) -> list[FileRecord]:
+        """Backward/semantic alias for callers preferring 'junk' terminology."""
+        return self.trash_records
 
 
 class DICL:
@@ -83,45 +93,128 @@ class DICL:
 
     # ──────────────────────────────────────────────────────
     def crawl(self, url: str) -> CrawlResult:
+        root_domain = urlparse(url).netloc
         if not self.budget.can_visit(url, depth=0):
             raise RuntimeError(f"Budget rejects URL: {url}")
-        self.budget.register(url)
 
-        # 1) 노드 파이프라인 실행 (Scout → Control → Heavy)
-        payload = Payload(url=url, depth=0)
-        payload = self.pipeline.run(payload)
+        queue = deque([(url, 0)])
+        queued: set[str] = {url}
+        visited_pages: list[str] = []
 
-        # 2) Discovery: 미디어 4종만 필터링
-        discoveries = self.discovery.discover(payload)
+        media_map: dict[str, dict] = {}
+        trash_map: dict[str, dict] = {}
+        aggregated_errors: list[dict] = []
+        aggregated_warnings: list[str] = []
 
-        # 3) Analysis: 사이트 메타데이터 분석
-        analysis = self.analysis.analyze(payload)
+        root_priority = 0.0
+        root_analysis: dict | None = None
 
-        # 4) Relationship: 관계 그래프 갱신
-        self.relationship.link(url, discoveries)
-        relations = self.relationship.relations(url)
+        while queue:
+            current_url, depth = queue.popleft()
+            if not self.budget.can_visit(current_url, depth=depth):
+                continue
+
+            self.budget.register(current_url)
+            visited_pages.append(current_url)
+
+            payload = Payload(url=current_url, depth=depth)
+            payload = self.pipeline.run(payload)
+
+            if depth == 0:
+                root_priority = payload.priority
+
+            aggregated_errors.extend(payload.extras.get("errors", []))
+            aggregated_warnings.extend(payload.extras.get("warnings", []))
+
+            discoveries = self.discovery.discover(payload)
+            trash_urls = self.discovery.discover_trash(
+                payload,
+                scope_domain=root_domain,
+            )
+            recursive_urls = self.discovery.discover_recursive(
+                payload,
+                scope_domain=root_domain,
+            )
+            analysis = self.analysis.analyze(payload)
+
+            if root_analysis is None:
+                root_analysis = analysis
+
+            self.relationship.link(current_url, discoveries)
+
+            for d in discoveries:
+                media_map.setdefault(
+                    d["url"],
+                    {
+                        **d,
+                        "source_url": current_url,
+                        "depth": depth,
+                    },
+                )
+
+            for t in trash_urls:
+                if t["url"] == url:
+                    continue
+                trash_map.setdefault(
+                    t["url"],
+                    {
+                        **t,
+                        "source_url": current_url,
+                        "depth": depth,
+                    },
+                )
+
+            if depth >= self.budget.max_depth:
+                continue
+
+            for next_url in recursive_urls:
+                if next_url in queued:
+                    continue
+                if not self.budget.can_visit(next_url, depth=depth + 1):
+                    continue
+                queue.append((next_url, depth + 1))
+                queued.add(next_url)
+
+        discoveries = list(media_map.values())
+        trash_discoveries = list(trash_map.values())
         observed_sitemap = self.relationship.observed_sitemap()
 
-        # 5) FileRecord 생성
+        relations: list[dict] = []
+        for page_url in visited_pages:
+            relations.extend(self.relationship.relations(page_url))
+
         site_record = self.generator.make_site_record(
             site_url=url,
-            analysis=analysis,
+            analysis=root_analysis or {},
             discoveries=discoveries,
             relations=relations,
             observed_sitemap=observed_sitemap,
         )
         media_records = [
-            self.generator.make_media_record(url, d) for d in discoveries
+            self.generator.make_media_record(d.get("source_url", url), d)
+            for d in discoveries
+        ]
+        trash_records = [
+            self.generator.make_url_record(
+                parent_url=t.get("source_url", url),
+                url=t["url"],
+            )
+            for t in trash_discoveries
         ]
 
         return CrawlResult(
             site_record=site_record,
             media_records=media_records,
+            trash_records=trash_records,
             observed_sitemap=observed_sitemap,
             stats={
-                "priority": payload.priority,
-                "errors": payload.extras.get("errors", []),
-                "warnings": payload.extras.get("warnings", []),
+                "priority": root_priority,
+                "errors": aggregated_errors,
+                "warnings": aggregated_warnings,
                 "budget": self.budget.stats(),
+                "visited_pages": visited_pages,
+                "pages_crawled": len(visited_pages),
+                "media_found": len(media_records),
+                "trash_found": len(trash_records),
             },
         )
