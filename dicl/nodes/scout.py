@@ -11,9 +11,14 @@ Scout 는 *가볍게* 동작한다. JS 렌더링은 하지 않는다.
 
 from __future__ import annotations
 
+import time
+from datetime import datetime, timezone
+from urllib.parse import urljoin
+
 import requests
 from bs4 import BeautifulSoup
-from urllib.parse import urljoin
+from requests.exceptions import ConnectionError as RequestsConnectionError
+from requests.exceptions import HTTPError, Timeout
 
 from ..core.node import Node, Payload
 
@@ -29,17 +34,24 @@ DEFAULT_HEADERS = {
 class ScoutNode(Node):
     name = "ScoutNode"
 
-    def __init__(self, timeout: float = 10.0) -> None:
+    def __init__(
+        self,
+        timeout: float = 10.0,
+        *,
+        max_retries: int = 3,
+        backoff_factor: float = 1.0,
+        retry_statuses: tuple[int, ...] = (429, 500, 502, 503, 504),
+        sleep_func=None,
+    ) -> None:
         self.timeout = timeout
+        self.max_retries = max_retries
+        self.backoff_factor = backoff_factor
+        self.retry_statuses = retry_statuses
+        self.sleep_func = sleep_func or time.sleep
 
     # ──────────────────────────────────────────────────────
     def process(self, payload: Payload) -> Payload:
-        resp = requests.get(
-            payload.url,
-            timeout=self.timeout,
-            headers=DEFAULT_HEADERS,
-            allow_redirects=True,
-        )
+        resp = self._get_with_retry(payload.url, payload)
 
         payload.html = resp.text
         payload.status_code = resp.status_code
@@ -56,6 +68,76 @@ class ScoutNode(Node):
         )
 
         return payload
+
+    def _get_with_retry(self, url: str, payload: Payload):
+        last_error: Exception | None = None
+
+        for attempt in range(self.max_retries + 1):
+            try:
+                resp = requests.get(
+                    url,
+                    timeout=self.timeout,
+                    headers=DEFAULT_HEADERS,
+                    allow_redirects=True,
+                )
+            except (Timeout, RequestsConnectionError) as exc:
+                last_error = exc
+                if attempt >= self.max_retries:
+                    self._log_failed_url(
+                        payload,
+                        url=url,
+                        error_type=type(exc).__name__,
+                        retry_count=attempt,
+                    )
+                    raise
+                self._sleep_before_retry(attempt)
+                continue
+
+            if resp.status_code in self.retry_statuses:
+                last_error = HTTPError(
+                    f"Retry exhausted for {url}: HTTP {resp.status_code}",
+                    response=resp,
+                )
+                if attempt >= self.max_retries:
+                    self._log_failed_url(
+                        payload,
+                        url=url,
+                        error_type=f"HTTP {resp.status_code}",
+                        retry_count=attempt,
+                    )
+                    raise last_error
+                self._sleep_before_retry(attempt)
+                continue
+
+            return resp
+
+        if last_error is not None:
+            raise last_error
+        raise RuntimeError(f"Retry loop exhausted unexpectedly for URL: {url}")
+
+    def _sleep_before_retry(self, attempt: int) -> None:
+        delay = self.backoff_factor * (2 ** attempt)
+        self.sleep_func(delay)
+
+    @staticmethod
+    def _log_failed_url(
+        payload: Payload,
+        *,
+        url: str,
+        error_type: str,
+        retry_count: int,
+    ) -> None:
+        payload.extras.setdefault("failed_url_logs", []).append(
+            {
+                "url": url,
+                "error_type": error_type,
+                "occurred_at": datetime.now(timezone.utc)
+                .replace(microsecond=0)
+                .isoformat()
+                .replace("+00:00", "Z"),
+                "retry_count": retry_count,
+            }
+        )
 
     # ──────────────────────────────────────────────────────
     def _collect_candidates(self, soup: BeautifulSoup, base: str) -> list[str]:

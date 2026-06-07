@@ -8,7 +8,7 @@ Requires-Python: >=3.9
 Description-Content-Type: text/markdown
 Requires-Dist: requests>=2.28
 Requires-Dist: beautifulsoup4>=4.11
-Requires-Dist: dfss @ git+https://github.com/dlegoreamlab/dfss.git@main
+Requires-Dist: dfss @ git+https://github.com/dlegoreamlab/dfss.git@46dcb2148bf4b52d3b7cabcaf9fd9cdf63c319a8
 Provides-Extra: heavy
 Requires-Dist: playwright>=1.30; extra == "heavy"
 
@@ -59,7 +59,7 @@ URL ──► │ Scout Node │──► │ Control    │──► │ Heavy 
 ## 설치
 
 ```bash
-pip install -e .                # 기본 (DFSS 자동 설치)
+pip install -e .                # 기본 (DFSS commit hash 고정 설치)
 pip install -e ".[heavy]"       # + Playwright (동적 분석)
 playwright install chromium     # heavy 옵션 시
 ```

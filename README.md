@@ -46,11 +46,14 @@ URL ──► │ Scout Node │──► │ Control    │──► │ Heavy 
 ## 설치
 
 ```bash
-pip install -e .                # 기본 (DFSS 자동 설치)
+pip install -e .                # 기본 (DFSS commit hash 고정 설치)
 pip install -e ".[heavy]"       # + Playwright (동적 분석)
 pip install -e ".[telegram]"    # + Telethon (텔레그램 메시지 수집)
 playwright install chromium     # heavy 옵션 시
 ```
+
+기본 설치의 DFSS 의존성은 `46dcb2148bf4b52d3b7cabcaf9fd9cdf63c319a8` commit hash 로 고정되어
+`main` 브랜치 변경에 영향받지 않는 재현 가능한 빌드를 보장한다.
 
 또는 GitHub 에서 직접 설치:
 
@@ -84,7 +87,10 @@ assert result.site_record.validate() is True
 assert all(rec.validate() for rec in result.media_records)
 assert all(rec.validate() for rec in result.trash_records)
 
-# 5) Observed Sitemap (백서 §11)
+# 5) 실패 URL 로그
+print(result.stats["failed_url_logs"])
+
+# 6) Observed Sitemap (백서 §11)
 print(result.observed_sitemap)
 ```
 

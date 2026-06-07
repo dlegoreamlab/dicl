@@ -1,6 +1,9 @@
 requests>=2.28
 beautifulsoup4>=4.11
-dfss @ git+https://github.com/dlegoreamlab/dfss.git@main
+dfss @ git+https://github.com/dlegoreamlab/dfss.git@46dcb2148bf4b52d3b7cabcaf9fd9cdf63c319a8
 
 [heavy]
 playwright>=1.30
+
+[telegram]
+telethon>=1.36

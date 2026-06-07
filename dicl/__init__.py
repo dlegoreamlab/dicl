@@ -135,6 +135,7 @@ class DICL:
         trash_map: dict[str, dict] = {}
         aggregated_errors: list[dict] = []
         aggregated_warnings: list[str] = []
+        aggregated_failed_url_logs: list[dict] = []
 
         root_priority = 0.0
         root_analysis: dict | None = None
@@ -155,6 +156,7 @@ class DICL:
 
             aggregated_errors.extend(payload.extras.get("errors", []))
             aggregated_warnings.extend(payload.extras.get("warnings", []))
+            aggregated_failed_url_logs.extend(payload.extras.get("failed_url_logs", []))
 
             discoveries = self.discovery.discover(payload)
             trash_urls = self.discovery.discover_trash(
@@ -241,6 +243,8 @@ class DICL:
                 "priority": root_priority,
                 "errors": aggregated_errors,
                 "warnings": aggregated_warnings,
+                "failed_url_logs": aggregated_failed_url_logs,
+                "failed_url_count": len(aggregated_failed_url_logs),
                 "budget": self.budget.stats(),
                 "visited_pages": visited_pages,
                 "pages_crawled": len(visited_pages),
