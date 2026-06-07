@@ -48,6 +48,7 @@ URL ──► │ Scout Node │──► │ Control    │──► │ Heavy 
 ```bash
 pip install -e .                # 기본 (DFSS 자동 설치)
 pip install -e ".[heavy]"       # + Playwright (동적 분석)
+pip install -e ".[telegram]"    # + Telethon (텔레그램 메시지 수집)
 playwright install chromium     # heavy 옵션 시
 ```
 
@@ -85,6 +86,28 @@ assert all(rec.validate() for rec in result.trash_records)
 
 # 5) Observed Sitemap (백서 §11)
 print(result.observed_sitemap)
+```
+
+### Telethon 기반 텔레그램 메시지 수집
+
+```python
+from dicl import DICL
+
+dicl = DICL(use_heavy=False)
+telegram = dicl.collect_telegram(
+    api_id=123456,
+    api_hash="YOUR_API_HASH",
+    entity="public_channel_or_chat",
+    limit=50,
+)
+
+for msg in telegram.normalized_messages:
+    print(msg["message_id"], msg["record_type"], msg["file_name"])
+
+for rec in telegram.media_records:
+    # DFSS 의 telegram relation 표준(platform/chat_id/message_id)을 유지한다.
+    print(rec.type, rec.path, rec.meta["relation"])
+    assert rec.validate() is True
 ```
 
 ---

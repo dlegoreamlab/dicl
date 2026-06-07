@@ -40,10 +40,17 @@ from .engines.relationship import RelationshipEngine
 from .engines.generator import FileRecordGenerator
 
 from .records.file_record import FileRecord
+from .telegram import TelethonTelegramCollector, TelegramCollectResult
 
 
-__version__ = "2.1.0"
-__all__ = ["DICL", "CrawlResult", "FileRecord"]
+__version__ = "2.2.0"
+__all__ = [
+    "DICL",
+    "CrawlResult",
+    "TelegramCollectResult",
+    "TelethonTelegramCollector",
+    "FileRecord",
+]
 
 
 @dataclass
@@ -90,6 +97,29 @@ class DICL:
         self.analysis = AnalysisEngine()
         self.relationship = RelationshipEngine()
         self.generator = FileRecordGenerator()
+
+    def collect_telegram(
+        self,
+        *,
+        api_id: int,
+        api_hash: str,
+        entity: str | int,
+        limit: int = 100,
+        session: str = "dicl_telegram",
+        offset_id: int = 0,
+        reverse: bool = False,
+    ) -> TelegramCollectResult:
+        collector = TelethonTelegramCollector(
+            api_id=api_id,
+            api_hash=api_hash,
+            session=session,
+        )
+        return collector.collect(
+            entity=entity,
+            limit=limit,
+            offset_id=offset_id,
+            reverse=reverse,
+        )
 
     # ──────────────────────────────────────────────────────
     def crawl(self, url: str) -> CrawlResult:
