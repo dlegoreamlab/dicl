@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Build
+build/
+dist/
+*.egg-info/
+
+# Virtualenv
+.venv/
+venv/
+env/
+
+# Test
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Telethon
+*.session
+*.session-journal
+
+# Local
+.env
