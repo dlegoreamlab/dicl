@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import mimetypes
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -38,7 +39,31 @@ class TelethonTelegramCollector:
         reverse: bool = False,
     ) -> TelegramCollectResult:
         try:
-            from telethon.sync import TelegramClient
+            asyncio.get_running_loop()
+        except RuntimeError:
+            return asyncio.run(
+                self.collect_async(
+                    entity=entity,
+                    limit=limit,
+                    offset_id=offset_id,
+                    reverse=reverse,
+                )
+            )
+
+        raise RuntimeError(
+            "collect() cannot be used inside an active event loop. Use `await collect_async(...)` instead."
+        )
+
+    async def collect_async(
+        self,
+        entity: str | int,
+        *,
+        limit: int = 100,
+        offset_id: int = 0,
+        reverse: bool = False,
+    ) -> TelegramCollectResult:
+        try:
+            from telethon import TelegramClient
         except ImportError as exc:  # pragma: no cover - import guard
             raise RuntimeError(
                 "telethon is not installed. Install the telegram extra first."
@@ -47,9 +72,9 @@ class TelethonTelegramCollector:
         normalized_messages: list[dict[str, Any]] = []
         media_records: list[FileRecord] = []
 
-        with TelegramClient(self.session, self.api_id, self.api_hash) as client:
-            chat = client.get_entity(entity)
-            for message in client.iter_messages(
+        async with TelegramClient(self.session, self.api_id, self.api_hash) as client:
+            chat = await client.get_entity(entity)
+            async for message in client.iter_messages(
                 chat,
                 limit=limit,
                 offset_id=offset_id,

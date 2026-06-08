@@ -96,6 +96,8 @@ print(result.observed_sitemap)
 
 ### Telethon 기반 텔레그램 메시지 수집
 
+동기 호출은 내부적으로 비동기 수집기를 실행한다.
+
 ```python
 from dicl import DICL
 
@@ -114,6 +116,29 @@ for rec in telegram.media_records:
     # DFSS 의 telegram relation 표준(platform/chat_id/message_id)을 유지한다.
     print(rec.type, rec.path, rec.meta["relation"])
     assert rec.validate() is True
+```
+
+이미 이벤트 루프 안에서 실행 중이라면 `collect_telegram_async()` / `collect_async()` 를 사용한다.
+
+```python
+import asyncio
+from dicl import DICL
+
+
+async def main() -> None:
+    dicl = DICL(use_heavy=False)
+    telegram = await dicl.collect_telegram_async(
+        api_id=123456,
+        api_hash="YOUR_API_HASH",
+        entity="public_channel_or_chat",
+        limit=50,
+    )
+
+    for msg in telegram.normalized_messages:
+        print(msg["message_id"], msg["record_type"], msg["file_name"])
+
+
+asyncio.run(main())
 ```
 
 ---

@@ -1,34 +1,22 @@
-# Python
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
+*.pyd
 
-# Build
 build/
 dist/
 *.egg-info/
 
-# Virtualenv
 .venv/
 venv/
-env/
 
-# Test
 .pytest_cache/
 .coverage
-htmlcov/
 
-# IDE
-.vscode/
 .idea/
+.vscode/
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Telethon
 *.session
 *.session-journal
 
-# Local
 .env

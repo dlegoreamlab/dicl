@@ -121,6 +121,29 @@ class DICL:
             reverse=reverse,
         )
 
+    async def collect_telegram_async(
+        self,
+        *,
+        api_id: int,
+        api_hash: str,
+        entity: str | int,
+        limit: int = 100,
+        session: str = "dicl_telegram",
+        offset_id: int = 0,
+        reverse: bool = False,
+    ) -> TelegramCollectResult:
+        collector = TelethonTelegramCollector(
+            api_id=api_id,
+            api_hash=api_hash,
+            session=session,
+        )
+        return await collector.collect_async(
+            entity=entity,
+            limit=limit,
+            offset_id=offset_id,
+            reverse=reverse,
+        )
+
     # ──────────────────────────────────────────────────────
     def crawl(self, url: str) -> CrawlResult:
         root_domain = urlparse(url).netloc

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import sys
 from datetime import datetime, timezone
+from types import ModuleType
 
 from dicl.telegram import TelethonTelegramCollector
 
@@ -178,3 +181,73 @@ def test_telegram_music_and_pdf_are_both_supported() -> None:
     assert pdf_record.meta["fields"]["file_name"] == "spec.pdf"
     assert pdf_record.meta["relation"]["message_id"] == 92
     assert pdf_record.validate() is True
+
+
+def test_collect_async_uses_async_iter_messages(monkeypatch) -> None:
+    collector = TelethonTelegramCollector(api_id=1, api_hash="hash")
+    chat = DummyChat(chat_id=-100777888, username="async_demo")
+    messages = [
+        DummyMessage(
+            message_id=101,
+            chat_id=chat.id,
+            text="first",
+            photo=DummyPhoto([DummyPhotoSize(640, 360)]),
+            file=DummyFile(size=1024),
+        ),
+        DummyMessage(
+            message_id=102,
+            chat_id=chat.id,
+            text="second",
+            document=DummyDocument(
+                mime_type="application/pdf",
+                size=2048,
+                attributes=[DocumentAttributeFilename("async.pdf")],
+            ),
+        ),
+    ]
+
+    class FakeTelegramClient:
+        def __init__(self, session, api_id, api_hash):
+            self.session = session
+            self.api_id = api_id
+            self.api_hash = api_hash
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+
+        async def get_entity(self, entity):
+            assert entity == "demo"
+            return chat
+
+        def iter_messages(self, entity, *, limit, offset_id, reverse):
+            assert entity is chat
+            assert limit == 2
+            assert offset_id == 10
+            assert reverse is True
+
+            async def _generator():
+                for item in messages:
+                    yield item
+
+            return _generator()
+
+    fake_telethon = ModuleType("telethon")
+    fake_telethon.TelegramClient = FakeTelegramClient
+    monkeypatch.setitem(sys.modules, "telethon", fake_telethon)
+
+    result = asyncio.run(
+        collector.collect_async(
+            entity="demo",
+            limit=2,
+            offset_id=10,
+            reverse=True,
+        )
+    )
+
+    assert [msg["message_id"] for msg in result.normalized_messages] == [101, 102]
+    assert [record.type for record in result.media_records] == ["image", "pdf"]
+    assert result.stats["messages_collected"] == 2
+    assert result.stats["media_records"] == 2
