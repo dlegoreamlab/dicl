@@ -15,8 +15,8 @@ from urllib.parse import urlparse
 @dataclass
 class VisitBudget:
     max_depth: int = 2
-    max_visits: int = 200
-    max_per_domain: int = 80
+    max_visits: int = 1000
+    max_per_domain: int = 100
     max_seconds: float = 60.0
 
     _visits: int = 0
